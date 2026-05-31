@@ -1,5 +1,4 @@
- 
-name: Deploy to GitHub Pages
+ name: Deploy to GitHub Pages
 
 on:
   push:
@@ -20,11 +19,11 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Run local server script
-        run: echo "No build needed"
+      - name: No build needed
+        run: echo "Static site ready to deploy"
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
