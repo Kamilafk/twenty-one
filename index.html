@@ -1,0 +1,1574 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Twenty One: Death Chamber - AI Festival Edition</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+<body>
+  <!-- Постобработка UI -->
+  <div class="crt"></div>
+  <div class="vignette"></div>
+
+  <!-- Анимация пробуждения -->
+  <div id="eyelids">
+    <div id="eyelid-top" class="eyelid-half"></div>
+    <div id="eyelid-bottom" class="eyelid-half"></div>
+  </div>
+
+  <!-- Оверлей вступительной сцены (затемнение, пробуждение, сон) -->
+  <div id="intro-overlay"></div>
+
+  <!-- Главное меню -->
+  <div id="main-menu">
+    <div id="menu-noise"></div>
+    <div id="menu-title">TWENTY ONE<br>DEATH CHAMBER</div>
+
+    <button class="horror-btn" id="btn-play-game">ПРИНЯТЬ СУДЬБУ</button>
+  </div>
+
+  <div id="ui-overlay">
+    <!-- Шкала Урона (бывший спидометр) -->
+    <div id="damage-scale-container" class="hidden">
+      <div id="damage-label">ШКАЛА УРОНА</div>
+      <canvas id="speedo-canvas" width="280" height="140"></canvas>
+      <div id="speedo-players">
+        <span id="speedo-p1">ИГРОК: 0/8</span>
+        <span id="speedo-p2">ОППОНЕНТ: 0/8</span>
+      </div>
+    </div>
+    
+    <!-- Активный козырь -->
+    <div id="trump-card" class="hidden">
+      <div id="trump-name">-</div>
+      <div id="trump-desc">Выбор судьбы...</div>
+    </div>
+    
+    <!-- Таймер хода -->
+    <div id="timer"></div>
+    
+      <!-- Кнопки контроля -->
+      <div id="controls" class="hidden">
+        <button class="action-btn" id="btn-hit" disabled>ВЗЯТЬ КАРТУ</button>
+        <button class="action-btn" id="btn-stand" disabled>ОСТАНОВИТЬСЯ</button>
+        <button class="action-btn" id="btn-toggle-trump">КОЗЫРИ</button>
+      </div>
+      <!-- Панель козырей (скрыта по умолчанию, открывается кнопкой) -->
+      <div id="trump-panel" class="hidden">
+        <div id="trump-list"></div>
+      </div>
+    
+     <!-- Выбор козыря на раунд - теперь скрыт, так как козыри даются рандомно -->
+     <div id="trump-selection-overlay" class="hidden">
+       <div id="trump-selection-title">ВЫБЕРИТЕ КОЗЫРЬ</div>
+       <div id="trump-cards-grid"></div>
+     </div>
+
+    <!-- HUD Карт (Руки) -->
+    <div id="hands" class="hidden">
+      <div id="hand-p1" class="hand">
+        <div class="hand-label">ВЫ (ИГРОК)</div>
+        <div class="hand-cards"></div>
+        <div class="hand-score">СУММА: 0</div>
+      </div>
+      <div id="hand-p2" class="hand">
+        <div class="hand-label">ОППОНЕНТ</div>
+        <div class="hand-cards"></div>
+        <div class="hand-score">СУММА: ?</div>
+      </div>
+    </div>
+    
+    <div id="round-info" class="hidden">РАУНД: 1 | ЦЕЛЬ: 21 | СТАВКА УРОНА: 1</div>
+    
+    <div id="overkill-badge-p1" class="overkill-badge hidden">ПЕРЕБОР</div>
+    <div id="overkill-badge-p2" class="overkill-badge hidden">ПЕРЕБОР</div>
+    
+    <!-- Окно результатов -->
+    <div id="result-modal" class="hidden">
+      <div id="result-content">
+        <div id="result-title">ИТОГ РАУНДА</div>
+        <div id="result-body">Подсчёт...</div>
+        <button class="action-btn" id="btn-next">СЛЕДУЮЩИЙ РАУНД</button>
+      </div>
+    </div>
+    
+    <!-- Оверлей активации козыря -->
+    <div id="trump-effect-overlay" class="hidden">
+      <div id="trump-effect-content">АКТИВАЦИЯ</div>
+    </div>
+    <!-- Оверлей таймаута (белый шум) -->
+    <div id="timeout-overlay"></div>
+  </div>
+
+  <!-- THREE.JS -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.128.0/examples/js/libs/inflate.min.js"></script>
+  <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/FBXLoader.js"></script>
+  <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+  
+  <script>
+    // ==========================================
+    // ГЕНЕРАЦИЯ ПРОЦЕДУРНЫХ ТЕКСТУР ДЛЯ 3D
+    // ==========================================
+    function createGrimeTexture() {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1024; canvas.height = 1024;
+      const ctx = canvas.getContext('2d');
+      
+      // Базовый тёмный металл/дерево (чуть светлее)
+      ctx.fillStyle = '#2a1414';
+      ctx.fillRect(0, 0, 1024, 1024);
+      
+      // Шум и грязь (меньше, чтобы было светлее)
+      for(let i=0; i<8000; i++) {
+        ctx.fillStyle = Math.random() > 0.7 ? 'rgba(0,0,0,0.5)' : 'rgba(60,30,30,0.2)';
+        const size = Math.random() * 3 + 1;
+        ctx.fillRect(Math.random()*1024, Math.random()*1024, size, size);
+      }
+      
+      
+      return new THREE.CanvasTexture(canvas);
+    }
+
+    function createStoneTexture() {
+      const canvas = document.createElement('canvas');
+      canvas.width = 512; canvas.height = 512;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#2a2522';
+      ctx.fillRect(0, 0, 512, 512);
+      for (let y = 0; y < 512; y += 48) {
+        const off = (Math.floor(y / 48) % 2) * 24;
+        for (let x = -off; x < 512; x += 48) {
+          ctx.strokeStyle = '#1a1715'; ctx.lineWidth = 2;
+          ctx.strokeRect(x, y, 48, 48);
+          for (let i = 0; i < 12; i++) {
+            ctx.fillStyle = `rgba(0,0,0,${Math.random() * 0.35})`;
+            ctx.fillRect(x + Math.random() * 48, y + Math.random() * 48, Math.random() * 3 + 1, Math.random() * 3 + 1);
+          }
+          if (Math.random() > 0.75) {
+            ctx.fillStyle = `rgba(50,60,40,${Math.random() * 0.15})`;
+            ctx.beginPath(); ctx.arc(x + Math.random() * 48, y + Math.random() * 48, Math.random() * 6 + 2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+      return new THREE.CanvasTexture(canvas);
+    }
+
+    function createMetalTexture() {
+      const canvas = document.createElement('canvas');
+      canvas.width = 256; canvas.height = 256;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#555555'; ctx.fillRect(0, 0, 256, 256);
+      for (let i = 0; i < 1000; i++) {
+        ctx.fillStyle = `rgba(0,0,0,${Math.random() * 0.3})`;
+        ctx.fillRect(Math.random() * 256, Math.random() * 256, Math.random() * 4 + 1, Math.random() * 4 + 1);
+        ctx.fillStyle = `rgba(120,60,20,${Math.random() * 0.2})`;
+        ctx.fillRect(Math.random() * 256, Math.random() * 256, Math.random() * 3 + 1, Math.random() * 3 + 1);
+      }
+      return new THREE.CanvasTexture(canvas);
+    }
+
+    // ==========================================
+    // СИНТЕЗАТОР ЗВУКОВ (Web Audio API)
+    // ==========================================
+    class SoundController {
+      constructor() {
+        this.ctx = null;
+        this.ambientGain = null;
+      }
+      init() {
+        if (this.ctx) return;
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) return;
+        this.ctx = new AudioContext();
+        this.startAmbient();
+      }
+      startAmbient() {
+        try {
+          const osc = this.ctx.createOscillator();
+          this.ambientGain = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(40, this.ctx.currentTime); // Очень низкий гул
+          
+          const filter = this.ctx.createBiquadFilter();
+          filter.type = 'lowpass';
+          filter.frequency.setValueAtTime(100, this.ctx.currentTime);
+
+          this.ambientGain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+
+          osc.connect(filter);
+          filter.connect(this.ambientGain);
+          this.ambientGain.connect(this.ctx.destination);
+          osc.start();
+        } catch (e) {}
+      }
+      playClick() {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.connect(gain); gain.connect(this.ctx.destination);
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(300, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(50, this.ctx.currentTime + 0.05);
+        gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.05);
+        osc.start(); osc.stop(this.ctx.currentTime + 0.05);
+      }
+      playDealCard() {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(800, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(100, this.ctx.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.05, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.1);
+        osc.connect(gain); gain.connect(this.ctx.destination);
+        osc.start(); osc.stop(this.ctx.currentTime + 0.1);
+      }
+      playShock() {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(50, this.ctx.currentTime);
+        osc.frequency.linearRampToValueAtTime(200, this.ctx.currentTime + 0.2);
+        gain.gain.setValueAtTime(0.8, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.8);
+        osc.connect(gain); gain.connect(this.ctx.destination);
+        osc.start(); osc.stop(this.ctx.currentTime + 0.8);
+        
+        // Визуальный эффект
+        document.body.classList.add('shake');
+        document.getElementById('ui-overlay').classList.add('damage-flash');
+        setTimeout(() => {
+          document.body.classList.remove('shake');
+          document.getElementById('ui-overlay').classList.remove('damage-flash');
+        }, 500);
+      }
+    }
+    const sounds = new SoundController();
+
+    // ==========================================
+    // ЛОГИКА ИГРЫ И КОЛОДЫ
+    // ==========================================
+    const SUITS = ['spades', 'hearts', 'clubs', 'diamonds'];
+    const RANKS = ['2','3','4','5','6','7','8','9','10'];
+
+    class Deck {
+      constructor() { this.reset(); }
+      reset() {
+        this.cards = [];
+        for (const suit of SUITS) {
+          for (const rank of RANKS) {
+            this.cards.push({ suit, rank, value: this.getValue(rank) });
+          }
+        }
+      }
+      getValue(rank) { return parseInt(rank); }
+      shuffle() {
+        for (let i = this.cards.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [this.cards[i], this.cards[j]] = [this.cards[j], this.cards[i]];
+        }
+      }
+      draw() { return this.cards.pop(); }
+      drawByValue(value) {
+        const idx = this.cards.findIndex(c => c.value === value);
+        if (idx === -1) return null;
+        return this.cards.splice(idx, 1)[0];
+      }
+      drawAce() { return null; }
+    }
+
+    class Player {
+      constructor(name, id) {
+        this.name = name; this.id = id;
+        this.resetGame();
+      }
+      addCard(card, faceUp = true) {
+        if(!card) return;
+        card.faceUp = faceUp;
+        this.hand.push(card);
+        this.recalcScore();
+      }
+      removeLastCard() {
+        const c = this.hand.pop();
+        this.recalcScore();
+        return c;
+      }
+      get visibleHand() {
+        return this.hand.map((c, i) => ({
+          ...c, faceUp: this.hushCards.includes(i) ? false : c.faceUp
+        }));
+      }
+      recalcScore() {
+        let score = 0;
+        for (const c of this.hand) score += c.value;
+        this.score = score;
+        return score;
+      }
+      resetRound() {
+        this.hand = []; this.score = 0;
+        this.hasPassed = false; this.hushCards = []; this.hasOverkill = false;
+      }
+      resetGame() {
+        this.resetRound();
+        this.speed = 0; // Урон
+        this.hasBless = false; this.isDead = false; this.trumpInventory = [];
+      }
+    }
+
+    // SVG Иконки для козырей
+    const ICONS = {
+      card: '🎴', bless: '✙', blood: '🩸', destroy: '🔨',
+      skull: '☠', swap: '⇄', hand: '🤝', target: '🎯',
+      eye: '👁', up1: '↑', up2: '⇈', shield: '🛡',
+      cut: '✂', return: '↩', star: '★', spiral: '🌀'
+    };
+
+    const TRUMP_DEFS = [
+      { id: 'card2', name: 'Карта: 2', category: 'card', symbol: ICONS.card, desc: 'Даёт карту на 2 очка (если её нет в игре).' },
+      { id: 'card5', name: 'Карта: 5', category: 'card', symbol: ICONS.card, desc: 'Даёт карту на 5 очков.' },
+      { id: 'bless', name: 'Благословение', category: 'defense', symbol: ICONS.bless, desc: 'Защищает от смертельного удара на 8 делении.' },
+      { id: 'bloodshed', name: 'Кровопролитие', category: 'interactive', symbol: ICONS.blood, desc: 'Уничтожает козырь врага, ставка +1.' },
+      { id: 'destroy', name: 'Уничтожение', category: 'interactive', symbol: ICONS.destroy, desc: 'Уничтожает активный козырь оппонента.' },
+      { id: 'disservice', name: 'Медвежья услуга', category: 'card', symbol: ICONS.skull, desc: 'Оппонент берет случайную карту.' },
+      { id: 'exchange', name: 'Обмен', category: 'card', symbol: ICONS.swap, desc: 'Обмен последними картами.' },
+      { id: 'go_for_24', name: 'Цель: 24', category: 'target', symbol: ICONS.target, desc: 'Предел раунда повышается до 24.' },
+      { id: 'hush', name: 'Тишина', category: 'card', symbol: ICONS.eye, desc: 'Следующая карта выдается в закрытую.' },
+      { id: 'one_up', name: 'Ставка +1', category: 'stake', symbol: ICONS.up1, desc: 'Увеличивает урон проигравшему на 1.' },
+      { id: 'shield', name: 'Щит', category: 'stake', symbol: ICONS.shield, desc: 'Снимает 1 единицу урона с вашей шкалы.' },
+      { id: 'force_draw', name: 'Форсаж', category: 'card', symbol: ICONS.star, desc: 'Вы принудительно тянете карту из колоды.' }
+    ];
+
+    class GameManager {
+      constructor(onStateChange) {
+        this.onStateChange = onStateChange;
+        this.deck = new Deck();
+        this.players = [new Player('Игрок', 0), new Player('Оппонент', 1)];
+        this.roundNumber = 0;
+        this.turnIndex = 0;
+        this.roundTarget = 21;
+        this.activeTrumps = [null, null]; 
+        this.phase = 'idle';
+        this.timerInterval = null;
+        this.timeLeft = 0;
+      }
+      
+      startGame() {
+        console.log('startGame');
+        sounds.init();
+        for (const p of this.players) {
+          p.resetGame();
+          for (let i = 0; i < 2; i++) p.trumpInventory.push({...TRUMP_DEFS[Math.floor(Math.random() * TRUMP_DEFS.length)]});
+        }
+        this.roundNumber = 0;
+        this.phase = 'intro';
+        this.onStateChange();
+        setTimeout(() => this.startRound(), 3000);
+      }
+
+      startRound() {
+        console.log('startRound');
+        // ОЧИСТКА ВСЕГО ПЕРЕД НОВЫМ РАУНДОМ
+        this.roundNumber++;
+        this.roundTarget = 21;
+        this.baseStake = 1;
+        this.activeTrumps = [null, null];
+        
+        // Новая колода
+        this.deck.reset();
+        this.deck.shuffle();
+        
+        // Очистка рук игроков
+        for (const p of this.players) p.resetRound();
+        
+        // Раздача (по 1 карте)
+        this.players[0].addCard(this.deck.draw(), true);
+        this.players[1].addCard(this.deck.draw(), false); // Карта оппонента скрыта
+        
+        // Выдача 2 случайных козырей каждый раунд
+        if (this.roundNumber > 1) {
+            for (let i = 0; i < 2; i++) {
+                this.players[0].trumpInventory.push({...TRUMP_DEFS[Math.floor(Math.random() * TRUMP_DEFS.length)]});
+                this.players[1].trumpInventory.push({...TRUMP_DEFS[Math.floor(Math.random() * TRUMP_DEFS.length)]});
+            }
+        }
+
+        this.phase = 'turn_p1';
+        this.turnIndex = 0;
+        this.resetTimer();
+        this.onStateChange();
+      }
+
+      applyDamage(player, amount) {
+        if (player.hasBless && player.speed + amount >= 8) {
+          player.speed = 7; // Остается на краю
+          player.hasBless = false;
+          return { died: false, blessed: true };
+        }
+        player.speed = Math.min(player.speed + amount, 8);
+        if (player.speed >= 8) {
+          player.isDead = true;
+          return { died: true, blessed: false };
+        }
+        return { died: false, blessed: false };
+      }
+
+      selectTrump(pIdx, trumpId) {
+        const p = this.players[pIdx];
+        const tIdx = p.trumpInventory.findIndex(t => t.id === trumpId);
+        if (tIdx > -1) {
+          const t = p.trumpInventory.splice(tIdx, 1)[0];
+          this.activeTrumps[pIdx] = t;
+          this.executeTrump(pIdx, t);
+        }
+
+        if (pIdx === 0) {
+          // Оппонент выбирает козырь случайно (20% шанс)
+          if (this.players[1].trumpInventory.length > 0 && Math.random() > 0.8) {
+            const aiT = this.players[1].trumpInventory.splice(0, 1)[0];
+            this.activeTrumps[1] = aiT;
+            this.executeTrump(1, aiT);
+          }
+          this.phase = 'turn_p1';
+          this.turnIndex = 0;
+          this.resetTimer();
+          this.onStateChange();
+        }
+      }
+
+      skipTrump() {
+        this.phase = 'turn_p1';
+        this.turnIndex = 0;
+        this.resetTimer();
+        this.onStateChange();
+      }
+
+      executeTrump(pIdx, trump) {
+        sounds.playDealCard();
+        const p = this.players[pIdx];
+        const opp = this.players[1 - pIdx];
+        
+        // UI Effect
+        const overlay = document.getElementById('trump-effect-overlay');
+        document.getElementById('trump-effect-content').innerHTML = `${p.name} использует:<br><span style="color:#ff3333">${trump.name}</span>`;
+        overlay.classList.remove('hidden');
+        setTimeout(() => overlay.classList.add('hidden'), 2000);
+
+        // Logic
+        if (trump.id.startsWith('card')) {
+          const val = parseInt(trump.id.replace('card',''));
+          const c = this.deck.drawByValue(val);
+          if (c) p.addCard(c, true);
+        }
+        else if (trump.id === 'bless') p.hasBless = true;
+        else if (trump.id === 'bloodshed') { this.activeTrumps[1-pIdx] = null; this.baseStake++; }
+        else if (trump.id === 'destroy') this.activeTrumps[1-pIdx] = null;
+        else if (trump.id === 'disservice') opp.addCard(this.deck.draw(), true);
+        else if (trump.id === 'exchange') {
+          if (p.hand.length > 0 && opp.hand.length > 0) {
+            const pc = p.removeLastCard(); const oc = opp.removeLastCard();
+            p.addCard(oc, true); opp.addCard(pc, true);
+          }
+        }
+        else if (trump.id === 'go_for_24') this.roundTarget = 24;
+        else if (trump.id === 'hush') {
+          p.hushCards.push(p.hand.length);
+          p.addCard(this.deck.draw(), false);
+        }
+        else if (trump.id === 'one_up') this.baseStake++;
+        else if (trump.id === 'shield') p.speed = Math.max(0, p.speed - 1);
+        else if (trump.id === 'force_draw') {
+          const c = this.deck.draw();
+          if (c) p.addCard(c, true);
+        }
+        p.recalcScore(); opp.recalcScore();
+      }
+
+      hit() {
+        if (this.phase !== 'turn_p1') return;
+        sounds.playDealCard();
+        const p = this.players[0];
+        p.addCard(this.deck.draw(), true);
+        if (p.score > this.roundTarget) p.hasOverkill = true;
+        this.onStateChange();
+      }
+
+      stand() {
+        if (this.phase !== 'turn_p1') return;
+        this.players[0].hasPassed = true;
+        this.phase = 'turn_p2';
+        this.turnIndex = 1;
+        this.onStateChange();
+        setTimeout(() => this.processAITurn(), 1000);
+      }
+
+      processAITurn() {
+        if (this.phase !== 'turn_p2') return;
+        const ai = this.players[1];
+        if (ai.score < 17 && ai.score < this.roundTarget && !ai.hasPassed) {
+          sounds.playDealCard();
+          ai.addCard(this.deck.draw(), true);
+          if (ai.score > this.roundTarget) ai.hasOverkill = true;
+          this.onStateChange();
+          setTimeout(() => this.processAITurn(), 1200);
+        } else {
+          ai.hasPassed = true;
+          this.onStateChange();
+          if (this.players[0].hasPassed && this.players[1].hasPassed) {
+            setTimeout(() => this.endRound(), 500);
+          }
+        }
+      }
+
+      endRound() {
+        clearInterval(this.timerInterval);
+        this.phase = 'round_end';
+        const p1 = this.players[0]; const p2 = this.players[1];
+        
+        // Вскрытие карт
+        p1.hand.forEach(c => c.faceUp = true);
+        p2.hand.forEach(c => c.faceUp = true);
+        p1.recalcScore(); p2.recalcScore();
+
+        // Кто ближе к цели — тот выигрывает (даже при переборе)
+        let loser = null;
+        const p1Diff = Math.abs(this.roundTarget - p1.score);
+        const p2Diff = Math.abs(this.roundTarget - p2.score);
+        if (p1Diff < p2Diff) loser = p2;
+        else if (p2Diff < p1Diff) loser = p1;
+
+        if (loser) {
+          sounds.playShock();
+          const res = this.applyDamage(loser, this.baseStake);
+          this.lastResult = `${loser.name} проигрывает раунд и получает урон!`;
+          if (res.blessed) this.lastResult += `\nСпасено Благословением!`;
+          if (res.died) {
+            this.phase = 'game_over';
+            this.lastResult = `${loser.name} МЕРТВ.\nИгра окончена.`;
+          }
+        } else {
+          this.lastResult = "Ничья. Напряжение нарастает.";
+        }
+        this.onStateChange();
+      }
+
+      resetTimer() {
+        clearInterval(this.timerInterval);
+        this.timeLeft = 15;
+        this.timerInterval = setInterval(() => {
+          this.timeLeft--;
+          if (this.timeLeft <= 0) {
+            this.timeLeft = 0;
+            clearInterval(this.timerInterval);
+            this.timerInterval = null;
+            this.triggerTimeout();
+          } else {
+            this.onStateChange();
+          }
+        }, 1000);
+      }
+
+      triggerTimeout() {
+        // Эффекты: шум, вспышка, тряска
+        const overlay = document.getElementById('timeout-overlay');
+        overlay.classList.add('active');
+        document.body.classList.add('shake');
+        document.getElementById('ui-overlay').classList.add('damage-flash');
+
+        // Звук
+        sounds.playShock();
+
+        // Урон
+        const result = this.applyDamage(this.players[this.turnIndex], 1);
+        if (result.died) {
+          this.phase = 'game_over';
+          this.lastResult = `${this.players[this.turnIndex].name} МЕРТВ.\nВремя вышло.`;
+          setTimeout(() => {
+            overlay.classList.remove('active');
+            document.body.classList.remove('shake');
+            document.getElementById('ui-overlay').classList.remove('damage-flash');
+            this.onStateChange();
+          }, 600);
+        } else {
+          this.onStateChange();
+          // Автопереход хода оппоненту
+          setTimeout(() => {
+            overlay.classList.remove('active');
+            document.body.classList.remove('shake');
+            document.getElementById('ui-overlay').classList.remove('damage-flash');
+            if (this.turnIndex === 0 && this.phase === 'turn_p1') {
+              this.stand();
+            }
+          }, 600);
+        }
+      }
+    }
+
+    // ==========================================
+    // UI ОБНОВЛЕНИЕ И РЕНДЕР
+    // ==========================================
+    const game = new GameManager(updateUI);
+
+    const DOM = {
+      menu: document.getElementById('main-menu'),
+      eyelids: document.getElementById('eyelids'),
+      controls: document.getElementById('controls'),
+      hands: document.getElementById('hands'),
+      trumpSel: document.getElementById('trump-selection-overlay'),
+      trumpGrid: document.getElementById('trump-cards-grid'),
+      trumpCard: document.getElementById('trump-card'),
+      trumpPanel: document.getElementById('trump-panel'),
+      trumpList: document.getElementById('trump-list'),
+      roundInfo: document.getElementById('round-info'),
+      resultModal: document.getElementById('result-modal'),
+      scale: document.getElementById('damage-scale-container'),
+      speedoCanvas: document.getElementById('speedo-canvas'),
+      timer: document.getElementById('timer')
+    };
+    const ctx = DOM.speedoCanvas.getContext('2d');
+
+    document.getElementById('btn-play-game').onclick = () => {
+      sounds.playClick();
+      DOM.menu.style.opacity = '0';
+      setTimeout(() => DOM.menu.classList.add('hidden'), 2000);
+      // Запускаем вступительную сцену вместо прямой загрузки игры
+      startIntroSequence(() => {
+        showHands(); game.startGame();
+      });
+    };
+
+    document.getElementById('btn-hit').onclick = () => game.hit();
+    document.getElementById('btn-stand').onclick = () => game.stand();
+    let trumpPanelOpen = false;
+    document.getElementById('btn-toggle-trump').onclick = () => {
+      trumpPanelOpen = !trumpPanelOpen;
+      DOM.trumpPanel.classList.toggle('hidden', !trumpPanelOpen);
+      if (trumpPanelOpen) populateTrumpPanel();
+    };
+    function populateTrumpPanel() {
+      const inv = game.players[0].trumpInventory;
+      const shown = inv.slice(0, 3);
+      if (shown.length > 0) {
+        DOM.trumpList.innerHTML = shown.map(t =>
+          `<div class="trump-item">
+            <div class="trump-card-visual"></div>
+            <div class="trump-info">
+              <span class="trump-name">${t.symbol} ${t.name}</span>
+              <span class="trump-desc">${t.desc}</span>
+            </div>
+            <button class="apply-trump-btn" data-trump-id="${t.id}">ПРИМЕНИТЬ</button>
+          </div>`
+        ).join('');
+      } else {
+        DOM.trumpList.innerHTML = '<div style="padding:10px;color:#886">Нет козырей</div>';
+      }
+    }
+    DOM.trumpList.addEventListener('click', (e) => {
+      const btn = e.target.closest('.apply-trump-btn');
+      if (btn) {
+        const trumpId = btn.dataset.trumpId;
+        const p = game.players[0];
+        const tIdx = p.trumpInventory.findIndex(t => t.id === trumpId);
+        if (tIdx > -1) {
+          const t = p.trumpInventory.splice(tIdx, 1)[0];
+          game.activeTrumps[0] = t;
+          game.executeTrump(0, t);
+          populateTrumpPanel();
+        }
+      }
+    });
+    document.getElementById('btn-next').onclick = () => {
+      sounds.playClick();
+      DOM.resultModal.classList.add('hidden');
+      if (game.phase === 'game_over') location.reload(); // Hard reset for Festival
+      else game.startRound();
+    };
+
+    function drawScale() {
+      ctx.clearRect(0, 0, DOM.speedoCanvas.width, DOM.speedoCanvas.height);
+      const cx = DOM.speedoCanvas.width / 2, cy = DOM.speedoCanvas.height - 15, r = 110;
+      
+      // Arc
+      ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, 0);
+      ctx.lineWidth = 12; ctx.strokeStyle = '#1a0505'; ctx.stroke();
+      
+      // Ticks (0-8)
+      for (let i = 0; i <= 8; i++) {
+        const ang = Math.PI + (i/8)*Math.PI;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(ang)*(r-15), cy + Math.sin(ang)*(r-15));
+        ctx.lineTo(cx + Math.cos(ang)*(r+15), cy + Math.sin(ang)*(r+15));
+        ctx.lineWidth = 4; ctx.strokeStyle = i >= 6 ? '#ff0000' : '#8b0000'; ctx.stroke();
+      }
+
+      // Needles
+      const drawN = (val, color, len) => {
+        const ang = Math.PI + (Math.min(val,8)/8)*Math.PI;
+        ctx.beginPath(); ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + Math.cos(ang)*len, cy + Math.sin(ang)*len);
+        ctx.lineWidth = 6; ctx.strokeStyle = color; ctx.stroke();
+        // Glow
+        ctx.shadowColor = color; ctx.shadowBlur = 10; ctx.stroke(); ctx.shadowBlur = 0;
+      };
+      drawN(game.players[1].speed, '#55aaff', r - 30); // AI
+      drawN(game.players[0].speed, '#ff5555', r - 15); // Player
+    }
+
+      function renderHand(p, containerId) {
+        const el = document.getElementById(containerId).querySelector('.hand-cards');
+        el.innerHTML = '';
+        p.visibleHand.forEach(c => {
+          const d = document.createElement('div');
+          if (c.faceUp) {
+            d.className = `hand-card face-up card-${c.rank}`;
+            d.innerHTML = `<div class="card-rank">${c.rank}</div><div class="card-rank-bottom">${c.rank}</div>`;
+          } else {
+            d.className = 'hand-card face-down';
+          }
+          el.appendChild(d);
+        });
+        let sum = p.visibleHand.reduce((a,b) => a + (b.faceUp ? b.value : 0), 0);
+        let hasHidden = p.visibleHand.some(c=>!c.faceUp);
+        document.getElementById(containerId).querySelector('.hand-score').textContent = `СУММА: ${hasHidden ? sum+'+?' : p.score}`;
+      }
+
+    function updateUI() {
+      console.log('updateUI phase:', game.phase);
+      if (game.phase === 'idle' || game.phase === 'intro') return;
+
+      DOM.hands.classList.remove('hidden');
+      DOM.scale.classList.remove('hidden');
+      DOM.roundInfo.classList.remove('hidden');
+      
+      DOM.controls.classList.toggle('hidden', game.phase !== 'turn_p1');
+      document.getElementById('btn-hit').disabled = game.players[0].hasPassed;
+      document.getElementById('btn-stand').disabled = game.players[0].hasPassed;
+
+      DOM.roundInfo.innerHTML = `РАУНД: ${game.roundNumber}<br>ЦЕЛЬ: ${game.roundTarget}<br>СТАВКА: ${game.baseStake}`;
+      document.getElementById('speedo-p1').textContent = `ИГРОК: ${game.players[0].speed}/8`;
+      document.getElementById('speedo-p2').textContent = `ОППОНЕНТ: ${game.players[1].speed}/8`;
+      drawScale();
+
+       // Trump Selection - REMOVED (now using random trump assignment)
+       // All trump selection code removed as trumps are now assigned randomly at start of round
+       DOM.trumpSel.classList.add('hidden');
+
+       // Active Trump display
+       const activeTrump = game.activeTrumps[0] || game.activeTrumps[1];
+       if (activeTrump && game.phase.startsWith('turn')) {
+         DOM.trumpCard.classList.remove('hidden');
+         document.getElementById('trump-name').textContent = activeTrump.name;
+         document.getElementById('trump-desc').textContent = activeTrump.desc;
+       } else { DOM.trumpCard.classList.add('hidden'); }
+
+       // Trump panel — обновляем содержимое только если панель открыта
+       if (trumpPanelOpen && game.phase.startsWith('turn') && !game.players[0].hasPassed) {
+         populateTrumpPanel();
+       } else if (trumpPanelOpen) {
+         DOM.trumpPanel.classList.add('hidden');
+         trumpPanelOpen = false;
+       }
+
+      renderHand(game.players[0], 'hand-p1');
+      renderHand(game.players[1], 'hand-p2');
+
+      document.getElementById('overkill-badge-p1').classList.toggle('hidden', !game.players[0].hasOverkill);
+      document.getElementById('overkill-badge-p2').classList.toggle('hidden', !game.players[1].hasOverkill);
+
+      if (game.phase === 'turn_p1') {
+        DOM.timer.textContent = game.timeLeft;
+        DOM.timer.className = game.timeLeft <= 5 ? 'urgent' : '';
+      } else { DOM.timer.textContent = ''; }
+
+      if (game.phase === 'round_end' || game.phase === 'game_over') {
+        DOM.resultModal.classList.remove('hidden');
+        document.getElementById('result-body').innerHTML = `Сумма Игрока: <span style="color:#ff5555">${game.players[0].score}</span><br>Сумма Оппонента: <span style="color:#55aaff">${game.players[1].score}</span><br><br><strong style="color:#ff3333; font-size:24px;">${game.lastResult}</strong>`;
+        document.getElementById('btn-next').textContent = game.phase === 'game_over' ? 'ПОКИНУТЬ КАМЕРУ' : 'ПРОДОЛЖИТЬ';
+      }
+    }
+
+    // ==========================================
+    // THREE.JS: УЛУЧШЕННОЕ ОКРУЖЕНИЕ
+    // ==========================================
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x010001);
+    scene.fog = new THREE.FogExp2(0x010001, 0.04);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0.5, 4, 6); camera.lookAt(0.5, 0, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.domElement.id = 'webgl-canvas';
+    document.body.insertBefore(renderer.domElement, document.body.firstChild);
+
+    // Стол с процедурной текстурой (удалён, используется dining_table.glb)
+    const tableGeom = new THREE.CylinderGeometry(0.1, 0.1, 0.1, 4);
+    const tableMat = new THREE.MeshStandardMaterial({ visible: false });
+    const table = new THREE.Mesh(tableGeom, tableMat);
+    table.position.y = -999;
+
+    // ==========================================
+    // КАМЕРА (стены, пол, потолок, решётка)
+    // ==========================================
+    const stoneMat = new THREE.MeshStandardMaterial({
+      map: createStoneTexture(),
+      roughness: 0.95, metalness: 0.02
+    });
+    const darkStoneMat = new THREE.MeshStandardMaterial({
+      color: 0x1a1817, roughness: 0.95, metalness: 0.0
+    });
+    const metalMat = new THREE.MeshStandardMaterial({
+      map: createMetalTexture(),
+      roughness: 0.4, metalness: 0.8
+    });
+    const barMat = new THREE.MeshStandardMaterial({
+      color: 0x666666, roughness: 0.3, metalness: 0.9
+    });
+
+    const CW = 18, CH = 6, CD = 14;
+
+    // Пол
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(CW, CD), darkStoneMat);
+    floor.rotation.x = -Math.PI / 2; floor.position.set(0, -0.75, 0);
+    scene.add(floor);
+
+    // Потолок
+    const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(CW, CD), darkStoneMat);
+    ceiling.rotation.x = Math.PI / 2; ceiling.position.set(0, CH - 0.75, 0);
+    scene.add(ceiling);
+
+    // Задняя стена
+    const backWall = new THREE.Mesh(new THREE.PlaneGeometry(CW, CH), stoneMat);
+    backWall.position.set(0, CH / 2 - 0.75, -CD / 2);
+    scene.add(backWall);
+
+    // Левая стена
+    const leftWall = new THREE.Mesh(new THREE.PlaneGeometry(CD, CH), stoneMat);
+    leftWall.rotation.y = Math.PI / 2;
+    leftWall.position.set(-CW / 2, CH / 2 - 0.75, 0);
+    scene.add(leftWall);
+
+    // Правая стена
+    const rightWall = new THREE.Mesh(new THREE.PlaneGeometry(CD, CH), stoneMat);
+    rightWall.rotation.y = -Math.PI / 2;
+    rightWall.position.set(CW / 2, CH / 2 - 0.75, 0);
+    scene.add(rightWall);
+
+    // Передняя стена (нижняя половина)
+    const frontWallLow = new THREE.Mesh(new THREE.PlaneGeometry(CW, 1.8), stoneMat);
+    frontWallLow.position.set(0, 0.15, CD / 2);
+    scene.add(frontWallLow);
+
+    // Верхняя перекладина передней стены
+    const frontWallTop = new THREE.Mesh(new THREE.PlaneGeometry(CW, 0.6), stoneMat);
+    frontWallTop.position.set(0, CH - 0.75, CD / 2);
+    scene.add(frontWallTop);
+
+    // Вертикальные прутья решётки
+    for (let i = -7.5; i <= 7.5; i += 1.0) {
+      const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 2.8), barMat);
+      bar.position.set(i, 1.8, CD / 2 + 0.05);
+      scene.add(bar);
+    }
+
+    // Горизонтальные прутья решётки
+    for (let y = 0.8; y <= 3.8; y += 1.2) {
+      const hBar = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, CW - 1.5), barMat);
+      hBar.rotation.z = Math.PI / 2;
+      hBar.position.set(0, y, CD / 2 + 0.03);
+      scene.add(hBar);
+    }
+
+    // Дверной проём (правый край решётки — утолщённые прутья)
+    const doorFrameL = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 3), barMat);
+    doorFrameL.position.set(3.5, 1.8, CD / 2 + 0.05);
+    scene.add(doorFrameL);
+    const doorFrameR = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 3), barMat);
+    doorFrameR.position.set(5.5, 1.8, CD / 2 + 0.05);
+    scene.add(doorFrameR);
+
+    // Ржавые цепи на стенах (декор)
+    const chainMat = new THREE.MeshStandardMaterial({ color: 0x554433, metalness: 0.6, roughness: 0.7 });
+    for (let i = 0; i < 3; i++) {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.04, 8, 12), chainMat);
+      ring.position.set(-CW / 2 + 0.5 + i * 1.5, 2 + Math.random(), -CD / 2 + 1);
+      ring.rotation.x = Math.PI / 2;
+      ring.rotation.z = Math.random() * 0.5;
+      scene.add(ring);
+    }
+
+    // Нары (простая плоскость у левой стены)
+    const cotMat = new THREE.MeshStandardMaterial({ color: 0x1a1410, roughness: 0.9 });
+    const cot = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.2, 1.8), cotMat);
+    cot.position.set(-CW / 2 + 1.8, -0.55, -1);
+    scene.add(cot);
+    const cotLegs = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.4, 1.6), new THREE.MeshStandardMaterial({ color: 0x222222 }));
+    cotLegs.position.set(-CW / 2 + 1.8, -0.85, -1);
+    scene.add(cotLegs);
+
+    // Освещение (Мягкая верхняя подсветка + раскачивающаяся лампа)
+    const ambientLight = new THREE.AmbientLight(0xffcccc, 0.25);
+    scene.add(ambientLight);
+
+    // Мягкий верхний свет
+    const topLight = new THREE.DirectionalLight(0xffeeee, 1.2);
+    topLight.position.set(0, 10, 0);
+    scene.add(topLight);
+
+    const fillLight = new THREE.DirectionalLight(0xcc88cc, 0.6);
+    fillLight.position.set(-5, 5, 5);
+    scene.add(fillLight);
+
+    const swingingLight = new THREE.SpotLight(0xffddaa, 5);
+    swingingLight.position.set(0, 0.3, 0);
+    swingingLight.angle = Math.PI / 5;
+    swingingLight.penumbra = 0.5;
+    swingingLight.intensity = 5;
+    swingingLight.castShadow = true;
+    scene.add(swingingLight);
+    
+    // Красная подсветка
+    const redGlow = new THREE.PointLight(0xff0000, 1, 10);
+    redGlow.position.set(0, 1, -2);
+    scene.add(redGlow);
+
+    // Пыль
+    const particlesGeom = new THREE.BufferGeometry();
+    const posArray = new Float32Array(500 * 3);
+    for(let i=0; i<1500; i++) posArray[i] = (Math.random()-0.5)*15;
+    particlesGeom.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+    const particlesMat = new THREE.PointsMaterial({ size: 0.03, color: 0x886666, transparent: true, opacity: 0.4 });
+    const dust = new THREE.Points(particlesGeom, particlesMat);
+    scene.add(dust);
+
+    // ==========================================
+    // МОНСТР (BAGMAN)
+    // ==========================================
+    // МОНСТР (BAGMAN)
+    // ==========================================
+    let bagman = null;
+    let bagmanFallback = null;
+
+    // Сразу создаём fallback, пока GLB грузится
+    createFallbackMonster();
+
+    // GLTFLoader уже загружен статически в <head>
+    function initBagMan() {
+      loadBagManGLB();
+    }
+
+    function loadBagManGLB() {
+      const loader = new THREE.GLTFLoader();
+      // Подгружаем текстуру отдельно на случай, если внутри GLB битый путь
+      const texLoader = new THREE.TextureLoader();
+      let externalTex = null;
+      texLoader.load('PSX_BagMan_TEXTURES.png', function(tex) {
+        tex.flipY = false; tex.anisotropy = 4;
+        externalTex = tex;
+      });
+
+      loader.load('PSX_BagMan.glb', function(gltf) {
+        bagman = gltf.scene;
+        bagman.scale.set(3.5, 3.5, 3.5);
+        // Применяем текстуру ко всем мешам, у кого нет карты
+        bagman.traverse(function(node) {
+          if (node.isMesh) {
+            node.frustumCulled = false;
+            if (externalTex && node.material) {
+              const mats = Array.isArray(node.material) ? node.material : [node.material];
+              mats.forEach(m => {
+                if (!m.map) { m.map = externalTex; m.needsUpdate = true; }
+              });
+            }
+          }
+        });
+        // Переносим позицию/видимость с fallback
+        const fb = bagmanFallback;
+        if (fb) {
+          bagman.position.copy(fb.position);
+          bagman.rotation.y = fb.rotation.y;
+          bagman.visible = fb.visible;
+          scene.remove(fb);
+        } else {
+          bagman.position.set(0, 0, 5);
+          bagman.rotation.y = Math.PI;
+          bagman.visible = false;
+        }
+        scene.add(bagman);
+      }, undefined, function(err) {
+        console.warn('BagMan GLB error, keeping fallback:', err);
+      });
+    }
+
+    function createFallbackMonster() {
+      const g = new THREE.Group();
+      const bodyMat = new THREE.MeshStandardMaterial({ color: 0x442222, roughness: 0.8 });
+      const headMat = new THREE.MeshStandardMaterial({ color: 0x663333, roughness: 0.7 });
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.9, 0.4), bodyMat);
+      body.position.y = 0.5;
+      g.add(body);
+      const head = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.35, 0.35), headMat);
+      head.position.y = 1.05;
+      g.add(head);
+      const armL = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.6, 0.12), bodyMat);
+      armL.position.set(-0.4, 0.5, 0);
+      g.add(armL);
+      const armR = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.6, 0.12), bodyMat);
+      armR.position.set(0.4, 0.5, 0);
+      g.add(armR);
+      // Красные глаза
+      const eyeMat = new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0xff0000, emissiveIntensity: 0.5 });
+      const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.06, 4, 4), eyeMat);
+      eyeL.position.set(-0.08, 1.1, 0.18);
+      g.add(eyeL);
+      const eyeR = new THREE.Mesh(new THREE.SphereGeometry(0.06, 4, 4), eyeMat);
+      eyeR.position.set(0.08, 1.1, 0.18);
+      g.add(eyeR);
+      // Мешок на голове (полусфера)
+      const bag = new THREE.Mesh(new THREE.SphereGeometry(0.22, 6, 6, 0, Math.PI * 2, 0, Math.PI * 0.5), new THREE.MeshStandardMaterial({ color: 0x553322, roughness: 0.9 }));
+      bag.position.set(0, 1.15, -0.05);
+      bag.rotation.x = 0.2;
+      bag.scale.set(1, 1, 0.8);
+      g.add(bag);
+      g.scale.set(3.5, 3.5, 3.5);
+      g.position.set(0, 0, 5);
+      g.rotation.y = Math.PI;
+      g.visible = false;
+      bagmanFallback = g;
+      scene.add(g);
+    }
+    function getMonster() { return bagman || bagmanFallback; }
+
+    // Запускаем загрузку
+    initBagMan();
+
+    // ==========================================
+    // МЕБЕЛЬ (стул, ножки стола, лампа)
+    // ==========================================
+    function createChair() {
+      const g = new THREE.Group();
+      const woodMat = new THREE.MeshStandardMaterial({ color: 0x3a2010, roughness: 0.8 });
+      const metalMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.4, metalness: 0.7 });
+      // Сиденье
+      g.add(new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.08, 0.9), woodMat)).position.y = 0.55;
+      // Спинка
+      const back = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.6, 0.06), woodMat);
+      back.position.set(0, 0.95, -0.44); g.add(back);
+      // Ножки
+      for (let x of [-0.38, 0.38]) for (let z of [-0.38, 0.38]) {
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.55), metalMat);
+        leg.position.set(x, 0.275, z); g.add(leg);
+      }
+      // Подлокотники
+      for (let x of [-0.46, 0.46]) {
+        const a = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.25, 0.8), woodMat);
+        a.position.set(x, 0.65, 0); g.add(a);
+      }
+      g.position.set(0.5, -5.8, -3.5);
+      g.scale.set(2.0, 2.0, 2.0);
+      return g;
+    }
+
+    function createTableLegs() {
+      const g = new THREE.Group();
+      const metalMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.4, metalness: 0.8 });
+      const darkMat = new THREE.MeshStandardMaterial({ color: 0x2a1a0a, roughness: 0.9 });
+      for (let x of [-3.5, 3.5]) for (let z of [-3.5, 3.5]) {
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, 1.3), metalMat);
+        leg.position.set(x, -1.15, z); g.add(leg);
+        // Перекладина между ножками
+        if (x === 3.5 && z === 3.5) continue;
+      }
+      // Нижняя рама
+      const frameMat = new THREE.MeshStandardMaterial({ color: 0x3a2a1a, roughness: 0.9 });
+      for (let x of [-3.2, 3.2]) {
+        const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 7), frameMat);
+        bar.rotation.z = Math.PI / 2; bar.position.set(x, -0.55, 0); g.add(bar);
+      }
+      for (let z of [-3.2, 3.2]) {
+        const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 7), frameMat);
+        bar.rotation.x = Math.PI / 2; bar.position.set(0, -0.55, z); g.add(bar);
+      }
+      return g;
+    }
+
+    function createCeilingLamp() {
+      const g = new THREE.Group();
+      const metalMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.3, metalness: 0.9 });
+      const bulbMat = new THREE.MeshStandardMaterial({ color: 0xfff8e0, emissive: 0xffdd88, emissiveIntensity: 0.4 });
+      // Провод
+      const wire = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 2.2), metalMat);
+      wire.position.y = 1.1; g.add(wire);
+      // Абажур (конус)
+      const shade = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.15, 0.4, 12), metalMat);
+      shade.position.y = 0; g.add(shade);
+      // Лампочка
+      const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 8), bulbMat);
+      bulb.position.y = -0.2; g.add(bulb);
+      g.position.set(0, 4.5, 0);
+      return g;
+    }
+
+    // Добавляем мебель в сцену
+    const chair = createChair(); scene.add(chair);
+    const ceilingLamp = createCeilingLamp(); scene.add(ceilingLamp);
+
+    // ==========================================
+    // ТЕЛЕВИЗОР С ЗЕЛЁНЫМ ШУМОМ
+    // ==========================================
+    function createTV(scale) {
+      const s = scale || 1;
+      const g = new THREE.Group();
+      const casingMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.6 });
+      const darkMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+      const body = new THREE.Mesh(new THREE.BoxGeometry(1.6 * s, 1.3 * s, 0.9 * s), casingMat);
+      g.add(body);
+      const noiseCanvas = document.createElement('canvas');
+      noiseCanvas.width = 64; noiseCanvas.height = 48;
+      const noiseCtx = noiseCanvas.getContext('2d');
+      const noiseTex = new THREE.CanvasTexture(noiseCanvas);
+      const screenMat = new THREE.MeshStandardMaterial({ map: noiseTex, emissiveMap: noiseTex, emissive: 0x00ff00, emissiveIntensity: 0.6, roughness: 0.4 });
+      const screen = new THREE.Mesh(new THREE.PlaneGeometry(1.3 * s, 1.0 * s), screenMat);
+      screen.position.z = 0.46 * s;
+      g.add(screen);
+      const antMat = new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 0.8 });
+      for (let angle of [-0.3, 0.3]) {
+        const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.01 * s, 0.02 * s, 0.4 * s), antMat);
+        ant.position.set(Math.sin(angle) * 0.3 * s, 0.75 * s, 0.1 * s);
+        ant.rotation.z = angle * 2;
+        g.add(ant);
+      }
+      const legMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+      for (let x of [-0.5 * s, 0.5 * s]) {
+        const l = new THREE.Mesh(new THREE.BoxGeometry(0.05 * s, 0.3 * s, 0.05 * s), legMat);
+        l.position.set(x, -0.8 * s, 0);
+        g.add(l);
+      }
+      g.userData.noiseCtx = noiseCtx;
+      g.userData.noiseTex = noiseTex;
+      g.userData.screenMat = screenMat;
+      return g;
+    }
+
+    // Стек телевизоров — пирамида: 4 снизу, 3, 2, 1
+    const tvStackBase = new THREE.Group();
+    const tvSizes = [[4, 0.9], [3, 0.8], [2, 0.7], [1, 0.6]];
+    const tvSpacing = 1.1;
+    const tvBaseY = 0.1;
+    tvSizes.forEach(function(row, ri) {
+      const count = row[0], sz = row[1];
+      for (let i = 0; i < count; i++) {
+        const t = createTV(sz);
+        const rowWidth = (count - 1) * tvSpacing * sz;
+        t.position.set(-5.5 + i * tvSpacing * sz - rowWidth / 2, tvBaseY + ri * 1.1, -5.5);
+        t.rotation.y = 0.5;
+        tvStackBase.add(t);
+      }
+    });
+    scene.add(tvStackBase);
+
+    // Собираем все экраны для анимации шума
+    const tvScreens = [];
+    tvStackBase.traverse(function(n) {
+      if (n.userData && n.userData.noiseTex) tvScreens.push(n);
+    });
+
+    // ==========================================
+    // КОЛОДЫ КАРТ И ТАЙМЕР НА СТОЛЕ
+    // ==========================================
+    function createCardStack(x, y, z) {
+      const g = new THREE.Group();
+      const backMat = new THREE.MeshStandardMaterial({ color: 0x1a0a3a, roughness: 0.6 });
+      const edgeMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee, roughness: 0.8 });
+      for (let i = 0; i < 20; i++) {
+        const card = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.005, 0.32), [backMat, backMat, backMat, backMat, backMat, edgeMat]);
+        card.position.set(Math.sin(i * 0.3) * 0.001, i * 0.006, Math.cos(i * 0.5) * 0.001);
+        g.add(card);
+      }
+      g.position.set(x, y, z);
+      g.rotation.x = -0.1;
+      return g;
+    }
+    function createTimer() {
+      const g = new THREE.Group();
+      const baseMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.3, metalness: 0.8 });
+      const glowMat = new THREE.MeshStandardMaterial({ color: 0xff2200, emissive: 0xff0000, emissiveIntensity: 0.3 });
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.06, 16), baseMat);
+      body.position.y = 0.03; g.add(body);
+      const face = new THREE.Mesh(new THREE.CircleGeometry(0.1, 16), glowMat);
+      face.position.y = 0.06; g.add(face);
+      // Цифры на таймере (маленькие сегменты)
+      for (let i = 0; i < 8; i++) {
+        const seg = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.02, 0.005), new THREE.MeshStandardMaterial({ color: 0x00ff00, emissive: 0x00ff00, emissiveIntensity: 0.5 }));
+        seg.position.set(Math.sin(i * 0.8) * 0.07, 0.06, Math.cos(i * 0.8) * 0.07);
+        seg.rotation.y = -i * 0.8;
+        g.add(seg);
+      }
+      g.position.set(0, 0, 0);
+      return g;
+    }
+    // Размещаем на столе (над поверхностью)
+    const tableItems = new THREE.Group();
+    tableItems.add(createCardStack(-0.25, 0, 0));
+    tableItems.add(createCardStack(0.25, 0, 0));
+    const timerObj = createTimer(); timerObj.position.set(0, 0, 0); tableItems.add(timerObj);
+    tableItems.scale.set(2, 2, 2);
+    tableItems.position.set(0.7, 1.8, 1.5);
+    scene.add(tableItems);
+
+    // ==========================================
+    // ЗАГРУЗКА МОДЕЛЕЙ (стол, часы)
+    // ==========================================
+    let tabelModel = null;
+
+    // Руки (процедурные) — прикрепляются к камере, видны только за столом
+    function createProceduralHands() {
+      const g = new THREE.Group();
+      const skinMat = new THREE.MeshStandardMaterial({ color: 0xccaa88, roughness: 0.7 });
+      const sleeveMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.9 });
+      // Левая рука
+      const ls = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.09, 0.3), sleeveMat);
+      ls.position.set(-0.25, -0.15, -0.4); ls.rotation.z = 0.4; g.add(ls);
+      const lh = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.08, 0.06), skinMat);
+      lh.position.set(-0.32, -0.3, -0.4); g.add(lh);
+      // Правая рука
+      const rs = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.09, 0.3), sleeveMat);
+      rs.position.set(0.25, -0.15, -0.4); rs.rotation.z = -0.4; g.add(rs);
+      const rh = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.08, 0.06), skinMat);
+      rh.position.set(0.32, -0.3, -0.4); g.add(rh);
+      return g;
+    }
+    handsModel = createProceduralHands();
+    handsModel.visible = false;
+    camera.add(handsModel);
+    scene.add(camera);
+
+    function showHands() { if (handsModel) handsModel.visible = true; }
+    function hideHands() { if (handsModel) handsModel.visible = false; }
+
+    // Стол (GLB → FBX) — заменяет старый цилиндр
+    function loadTabel() {
+      if (typeof THREE.GLTFLoader === 'undefined') { setTimeout(loadTabel, 200); return; }
+      new THREE.GLTFLoader().load('dining_table.glb', function(gltf) {
+        tabelModel = gltf.scene;
+        tabelModel.scale.set(2.4, 2.4, 2.4);
+        tabelModel.position.set(0, -0.7, 1.5);
+        tabelModel.traverse(function(n) {
+          if (n.isMesh) { n.frustumCulled = false; if (n.material) { n.material.color.multiplyScalar(0.4); if (n.material.map) n.material.map.anisotropy = 4; } }
+        });
+        scene.remove(table);
+        scene.add(tabelModel);
+      }, undefined, function() {
+        console.warn('Table GLB failed, trying FBX');
+        if (typeof THREE.FBXLoader === 'undefined') { setTimeout(function() { loadTabelFBX(); }, 200); return; }
+        loadTabelFBX();
+      });
+    }
+    function loadTabelFBX() {
+      new THREE.FBXLoader().load('dining_table.fbx', function(obj) {
+        tabelModel = obj;
+        tabelModel.scale.set(0.024, 0.024, 0.024);
+        tabelModel.position.set(0, -0.7, 1.5);
+        tabelModel.traverse(function(n) {
+          if (n.isMesh) { n.frustumCulled = false; if (n.material) { n.material.color.multiplyScalar(0.4); if (n.material.map) n.material.map.anisotropy = 4; } }
+        });
+        scene.remove(table);
+        scene.add(tabelModel);
+      }, undefined, function(err) { console.warn('Table FBX error:', err); });
+    }
+    setTimeout(loadTabel, 300);
+
+    // Часы на стену (FBX)
+    function loadClock() {
+      if (typeof THREE.FBXLoader === 'undefined') { setTimeout(loadClock, 200); return; }
+      new THREE.FBXLoader().load('Clock.fbx', function(obj) {
+        obj.scale.set(0.008, 0.008, 0.008);
+        obj.position.set(-4.2, 2.2, -6.2);
+        obj.rotation.y = 0.3;
+        obj.traverse(function(n) {
+          if (n.isMesh) { n.frustumCulled = false; if (n.material && n.material.map) n.material.map.anisotropy = 4; }
+        });
+        scene.add(obj);
+      }, undefined, function(err) { console.warn('Clock FBX error:', err); });
+    }
+    setTimeout(loadClock, 300);
+
+    // Кресло справа от телевизоров
+    function loadChair() {
+      if (typeof THREE.GLTFLoader === 'undefined') { setTimeout(loadChair, 200); return; }
+      new THREE.GLTFLoader().load('Chair.glb', function(gltf) {
+        const ch1 = gltf.scene.clone();
+        ch1.scale.set(2, 2, 2);
+        ch1.position.set(4, -0.5, -5.5);
+        ch1.rotation.y = Math.PI - 0.5;
+        ch1.traverse(function(n) { if (n.isMesh) { n.frustumCulled = false; if (n.material && n.material.map) n.material.map.anisotropy = 4; } });
+        scene.add(ch1);
+        const ch2 = gltf.scene.clone();
+        ch2.scale.set(2, 2, 2);
+        ch2.position.set(6.2, -0.5, -2.5);
+        ch2.rotation.y = Math.PI;
+        ch2.traverse(function(n) { if (n.isMesh) { n.frustumCulled = false; if (n.material && n.material.map) n.material.map.anisotropy = 4; } });
+        scene.add(ch2);
+      }, undefined, function() {
+        console.warn('Chair GLB failed, trying FBX');
+        if (typeof THREE.FBXLoader !== 'undefined') {
+          new THREE.FBXLoader().load('Chair.fbx', function(obj) {
+            obj.scale.set(0.02, 0.02, 0.02);
+            obj.position.set(4, -0.5, -5.5);
+            obj.rotation.y = Math.PI - 0.5;
+            obj.traverse(function(n) { if (n.isMesh) { n.frustumCulled = false; if (n.material && n.material.map) n.material.map.anisotropy = 4; } });
+            scene.add(obj);
+          }, undefined, function(err) { console.warn('Chair FBX error:', err); });
+        }
+      });
+    }
+    setTimeout(loadChair, 400);
+
+    // ==========================================
+    // УПРАВЛЕНИЕ КАМЕРОЙ (мышь)
+    // ==========================================
+    let camState = { angle: 0, distance: 7.2, height: 4, targetY: -0.3 };
+
+    renderer.domElement.addEventListener('wheel', function(e) {
+      if (game.phase === 'idle' || game.phase === 'intro' || introState) return;
+      camState.distance = Math.max(3.5, Math.min(12, camState.distance + e.deltaY * 0.008));
+      e.preventDefault();
+    }, { passive: false });
+
+    let isDragging = false, prevMX = 0, prevMY = 0;
+    renderer.domElement.addEventListener('mousedown', function(e) {
+      if (game.phase === 'idle' || game.phase === 'intro' || introState) return;
+      if (e.button === 2 || e.button === 0) { isDragging = true; prevMX = e.clientX; prevMY = e.clientY; }
+    });
+    renderer.domElement.addEventListener('mousemove', function(e) {
+      if (!isDragging) return;
+      const dx = e.clientX - prevMX, dy = e.clientY - prevMY;
+      camState.angle = Math.max(-1.2, Math.min(1.2, camState.angle + dx * 0.006));
+      camState.height = Math.max(2.5, Math.min(6, camState.height - dy * 0.01));
+      prevMX = e.clientX; prevMY = e.clientY;
+    });
+    renderer.domElement.addEventListener('mouseup', function() { isDragging = false; });
+    renderer.domElement.addEventListener('mouseleave', function() { isDragging = false; });
+    renderer.domElement.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+
+    // ==========================================
+    // ВСТУПИТЕЛЬНАЯ СЦЕНА (Пробуждение в камере)
+    // ==========================================
+    let introState = null;
+    const introOverlay = document.getElementById('intro-overlay');
+
+    function fastBlinkOpen() {
+      DOM.eyelids.classList.remove('blink-close', 'open');
+      DOM.eyelids.classList.add('blink');
+    }
+    function fastBlinkClose() {
+      DOM.eyelids.classList.remove('blink', 'open');
+      DOM.eyelids.classList.add('blink-close');
+    }
+    function clearBlink() {
+      DOM.eyelids.classList.remove('blink', 'blink-close');
+    }
+
+    function startIntroSequence(callback) {
+      introOverlay.classList.remove('intro-fade', 'intro-dark', 'intro-blur');
+      introOverlay.style.opacity = '1';
+      introOverlay.style.transition = 'opacity 2s ease';
+      introOverlay.style.filter = 'none';
+
+      hideHands();
+      // Прячем монстра (появится позже)
+      const m = getMonster();
+      if (m) { m.visible = false; m.position.set(-1.5, -1, 1); m.rotation.y = 0.3; m.scale.set(3.5, 3.5, 3.5); }
+
+      // Позиционируем камеру для вида от первого лица (лёжа в камере)
+      camera.position.set(-1.5, 1.2, 2.5);
+      introState = { phase: 'closed', timer: 0, finalCallback: callback };
+
+      // Фаза 1: быстрое моргание (просыпается)
+      setTimeout(() => {
+        fastBlinkOpen();
+        introState.phase = 'blink1';
+        setTimeout(() => {
+          fastBlinkClose();
+          introState.phase = 'blink_close1';
+          setTimeout(() => {
+            clearBlink();
+            fastBlinkOpen();
+            introState.phase = 'blink2';
+            setTimeout(() => {
+              fastBlinkClose();
+              introState.phase = 'blink_close2';
+              setTimeout(() => {
+                clearBlink();
+                DOM.eyelids.classList.add('open');
+                // Показываем монстра СРАЗУ при открытии глаз
+                const m0 = getMonster();
+                if (m0) { m0.visible = true; m0.position.set(-1.5, -1, 1); m0.rotation.y = 0.3; }
+                camera.lookAt(-1.5, 0, 0.5);
+                introState.phase = 'fade_in';
+                introOverlay.style.transition = 'opacity 3s ease';
+                introOverlay.style.opacity = '0';
+                setTimeout(() => {
+                  introState.phase = 'look_around';
+                  introState.timer = 0;
+                  introState.lookDir = -1.5;
+                }, 3500);
+              }, 250);
+            }, 200);
+          }, 200);
+        }, 150);
+      }, 300);
+    }
+
+    // Этап 2: монстр отходит в конец камеры
+    function startMonsterWalkaway(callback) {
+      introState.phase = 'monster_walk';
+      introState.walkTimer = 0;
+      introState.walkCallback = callback;
+    }
+
+    // Этап 3: засыпание и переход за стол
+    function proceedToTable(callback) {
+      // Позиционируем монстра за столом напротив игрока (сидит, виден наполовину)
+      const m = getMonster();
+      if (m) {
+        m.visible = true;
+        m.position.set(0.5, -5.5, -3.5);
+        m.rotation.y = 0.2;
+        m.scale.set(4.5, 4.5, 4.5);
+        m.traverse(function(n) { if (n.isMesh) { n.frustumCulled = false; } });
+      }
+
+      introOverlay.style.transition = 'opacity 1.5s ease';
+      introOverlay.style.opacity = '1';
+      introState.phase = 'falling_asleep';
+      setTimeout(() => {
+        DOM.eyelids.classList.remove('open');
+        introOverlay.style.transition = 'opacity 0.5s ease';
+        introOverlay.style.opacity = '1';
+        setTimeout(() => {
+          camera.position.set(0.5, 4, 6);
+          camera.lookAt(0.5, 0, 0);
+          // Синхронизируем состояние камеры для мышиного управления
+          camState.angle = 0; camState.distance = 6; camState.height = 4;
+          introOverlay.style.transition = 'opacity 2s ease';
+          introOverlay.style.opacity = '0';
+          DOM.eyelids.classList.add('open');
+          setTimeout(() => {
+            introOverlay.style.opacity = '0';
+            introState = null;
+            callback();
+          }, 2500);
+        }, 1500);
+      }, 2000);
+    }
+
+    let time = 0;
+    function animate() {
+      requestAnimationFrame(animate);
+      time += 0.02;
+
+      // Раскачивание лампы
+      swingingLight.position.x = Math.sin(time) * 3;
+      swingingLight.position.z = Math.cos(time * 0.8) * 2;
+      swingingLight.lookAt(0,0,0);
+
+      // Движение пыли
+      dust.rotation.y += 0.001;
+      dust.position.y = Math.sin(time*0.5)*0.2;
+
+      // Пульсация красного света
+      redGlow.intensity = 0.5 + Math.sin(time * 3) * 0.5;
+
+      // Шум на всех телевизорах (обновляется каждый кадр)
+      tvScreens.forEach(function(tv) {
+        const ctx = tv.userData.noiseCtx;
+        const tex = tv.userData.noiseTex;
+        if (!ctx || !tex) return;
+        const w = 64, h = 48;
+        const imgData = ctx.createImageData(w, h);
+        for (let i = 0; i < imgData.data.length; i += 4) {
+          const v = Math.random() * 255;
+          imgData.data[i] = 0;
+          imgData.data[i+1] = v;
+          imgData.data[i+2] = 0;
+          imgData.data[i+3] = 255;
+        }
+        ctx.putImageData(imgData, 0, 0);
+        tex.needsUpdate = true;
+      });
+
+      // Анимация монстра (лёгкое покачивание) во время игры
+      if (!introState && bagman) {
+        bagman.position.y = -5.5 + Math.sin(time * 1.2) * 0.05;
+        bagman.rotation.z = Math.sin(time * 0.7) * 0.01;
+      }
+      if (!introState && bagmanFallback) {
+        bagmanFallback.position.y = -5.5 + Math.sin(time * 1.2) * 0.05;
+      }
+
+      // Вступительная сцена: фазы
+      if (introState) {
+        if (introState.phase === 'look_around') {
+          introState.timer += 0.02;
+          introState.lookDir = -1.5 + Math.sin(introState.timer * 0.6) * 3;
+          camera.lookAt(introState.lookDir, 1.0, -3);
+          camera.position.y = 1.2 + Math.sin(introState.timer * 2) * 0.05;
+          camera.position.x = -1.5 + Math.sin(introState.timer * 0.4) * 0.3;
+
+          if (introState.timer > Math.PI * 3.5 && !introState.triggered) {
+            introState.triggered = true;
+            startMonsterWalkaway(introState.finalCallback);
+          }
+        }
+        else if (introState.phase === 'monster_walk') {
+          introState.walkTimer += 0.02;
+          const t = Math.min(introState.walkTimer / 3.0, 1);
+          const m = getMonster();
+          if (m) {
+            // Плавно отходит: x ←, z → (вглубь), y опускается
+            m.position.x = -1.5 + t * (-4.5);
+            m.position.z = 1 + t * (-5);
+            m.position.y = -1 - t * 2;
+            m.rotation.y = 0.3 + t * 2.5;
+          }
+          // Плавное затемнение
+          introOverlay.style.transition = 'none';
+          introOverlay.style.opacity = Math.min(t * 0.6, 0.6);
+
+          if (t >= 1 && !introState.walkDone) {
+            introState.walkDone = true;
+            introOverlay.style.transition = 'opacity 0.5s ease';
+            introOverlay.style.opacity = '1';
+            setTimeout(() => {
+              const cb = introState.walkCallback;
+              if (cb) proceedToTable(cb);
+            }, 800);
+          }
+        }
+      } else {
+        // Камера с управлением от мыши
+        camera.position.x = 0.5 + Math.sin(camState.angle) * camState.distance * 0.5;
+        camera.position.z = Math.cos(camState.angle) * camState.distance;
+        camera.position.y = camState.height + Math.sin(time * 0.5) * 0.04;
+        camera.lookAt(0.5, camState.targetY, 0);
+      }
+
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
