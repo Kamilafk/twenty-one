@@ -1,3 +1,4 @@
+ 
 name: Deploy to GitHub Pages
 
 on:
@@ -23,11 +24,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run local server script
-        run: powershell -ExecutionPolicy Bypass -File server.ps1
+        run: echo "No build needed"
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4 
+        uses: actions/deploy-pages@v4
